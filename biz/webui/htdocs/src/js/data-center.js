@@ -16,6 +16,32 @@ var framesUpdateCallbacks = [];
 var logCallbacks = [];
 var directCallbacks = [];
 var dataList = [];
+
+const _push = dataList.push;
+dataList.push = function(...items) {
+  _push.call(this, ...items);
+  if (items.length > 0) {
+    events.trigger('createRequest', items);
+  }
+};
+
+const _splice = dataList.splice;
+dataList.splice = function(start, deleteCount, ...items) {
+  const prev = _splice.call(this, start, deleteCount, ...items);
+  if (prev.length > 0) {
+    events.trigger('deleteRequest', prev);
+  }
+  if (items.length > 0) {
+    events.trigger('createRequest', items, start);
+  }
+};
+
+events.on('flushTree', () => {
+  dataCallbacks.forEach(function (cb) {
+    cb(networkModal);
+  });
+});
+
 var logList = [];
 var svrLogList = [];
 var networkModal = new NetworkModal(dataList);

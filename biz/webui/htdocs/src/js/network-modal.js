@@ -1,5 +1,7 @@
 var util = require('./util');
 var storage = require('./storage');
+const events = require('./events');
+const Tree = require('./tree');
 
 var NUM_OPTIONS = [500, 1000, 1500, 2000, 2500, 3000];
 var curLength = parseInt(storage.get('maxNetworkRows'), 10) || 1500;
@@ -12,6 +14,11 @@ var KW_LIST_RE = /([^\s]+)(?:\s+([^\s]+)(?:\s+([\S\s]+))?)?/;
 function NetworkModal(list) {
   this._list = updateOrder(list);
   this.list = list.slice(0, MAX_LENGTH);
+
+  this.isTreeView = storage.get('isTreeView') === '1';
+  this.tree = new Tree();
+  this.stopInterceptor = null;
+  this.intercept();
 }
 
 NetworkModal.MAX_COUNT = MAX_COUNT;
@@ -275,6 +282,7 @@ proto.getDisplayCount = function() {
 };
 
 proto.clear = function clear() {
+  this.tree.clear();
   this.clearNetwork = true;
   this._list.splice(0, this._list.length);
   this.list = [];
@@ -623,6 +631,80 @@ function updateOrder(list, force) {
 
   return list;
 }
+
+proto.startInterceptor = function () {
+  const createRequest = (_, items, index = this._list.length - 1) => {
+    if (!this.isTreeView) {
+      return;
+    }
+
+    let list = items;
+    if (!Array.isArray(items)) {
+      list = [items];
+    }
+
+    list.forEach((item) => {
+      const {
+        url,
+        id,
+      } = item;
+      const hl = this.tree.insert({
+        url,
+        id,
+        index: index++,
+      });
+
+      events.trigger('highlightTree', hl);
+    });
+
+    events.trigger('flushTree');
+  };
+
+  // TODO: update tree map index after delete one request
+  const deleteRequest = (_, items) => {
+    if (!this.isTreeView) {
+      return;
+    }
+
+    let list = items;
+    if (!Array.isArray(items)) {
+      list = [items];
+    }
+
+    list.forEach((item) => this.tree.delete(item));
+
+    events.trigger('flushTree');
+  };
+
+  // TODO: updateRequest
+
+  events.on('createRequest', createRequest);
+  events.on('deleteRequest', deleteRequest);
+
+  return () => {
+    events.off('createRequest');
+    events.off('deleteRequest');
+  };
+};
+
+proto.intercept = function() {
+  if (this.isTreeView) {
+    this.stopInterceptor = this.startInterceptor();
+  } else {
+    if (this.stopInterceptor) {
+      this.stopInterceptor();
+      this.stopInterceptor = null;
+    }
+  }
+};
+
+proto.setTreeView = function(next = !this.isTreeView) {
+  this.isTreeView = !!next;
+  storage.set('isTreeView', +next);
+  this.intercept();
+  events.trigger('flushTree');
+  events.trigger('toggleTreeView', this.isTreeView);
+};
 
 module.exports = NetworkModal;
 
