@@ -48,9 +48,12 @@ const dfs = ({
 };
 
 class Tree {
+  // contains all tree node
   root = {};
-  // prefix list
+  // contains all unfolded node
   list = [];
+  // contains all filtered node
+  filterList = [];
   // map prefix to request list index
   map = new Map();
 
@@ -182,7 +185,7 @@ class Tree {
     });
   }
 
-  // find the closest unfold parent
+  // find the closest unfolded parent
   // update list if needed
   flush({
     parent,
@@ -192,10 +195,8 @@ class Tree {
       return parent;
     }
 
-    // parent is unfolded => parent
     let start = this.list.indexOf(parent);
 
-    // parent is unfolded => child
     if (child.parent.id === parent) {
       const p = this.map.get(parent);
       if (p && !p.fold) {
@@ -225,8 +226,8 @@ class Tree {
   }
 
   // DFS delete
-  // 1. branch: node + parent(s)
-  // 2. subtree: node + children
+  // 1. down: node + children
+  // 2. up: node + parent(s)
   delete({ url, id }) {
     if (!url) {
       return;
@@ -326,9 +327,8 @@ class Tree {
         ++delta;
       }
 
-      // recursive
+      // recursive or node.parent = unfold
       let valid = recursive;
-      // or node.parent = unfold
       if (!valid) {
         if (node.parent.id) {
           const config = this.map.get(node.parent.id);
@@ -341,7 +341,7 @@ class Tree {
         queue.push(id);
       }
 
-      // toggle fold state
+      // set next state
       if (recursive) {
         const item = this.map.get(id);
         this.map.set(id, {

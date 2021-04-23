@@ -113,12 +113,9 @@
   overflow-x: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 28px;
+  line-height: 24px;
   padding: 0 10px;
-}
-
-.tree-node:nth-child(even) {
-  background-color: rgba(143, 188, 143, 0.2);
+  font-size: 14px;
 }
 
 .tree-node:hover {

@@ -373,6 +373,13 @@ var ReqData = React.createClass({
       }
     });
     events.on('highlightTree', (_, id) => this.highlight(id));
+
+    events.on('filterTree', () => {
+      const {modal} = this.props;
+      if (modal) {
+        modal.filterTree();
+      }
+    });
   },
   onDragStart: function(e) {
     var target = $(e.target).closest('.w-req-data-item');
@@ -1008,26 +1015,29 @@ var ReqData = React.createClass({
     }
 
     const {modal = {}} = this.props;
-    const {tree, _list: requestList} = modal;
-    const {list, map} = tree;
+    const {tree = {}, _list: requestList} = modal;
+    const {list, filterList, map} = tree;
+    const hasKeyword = modal.hasKeyword();
+    const treeList = hasKeyword ? filterList : list;
 
-    const id = list[offset];
+    let id = treeList[offset];
     if (!id) {
       return null;
     }
 
     const item = map.get(id);
-    if (!item || !isVisible(item)) {
+    if (!item) {
       return null;
     }
 
     let request = null;
     const {index, depth, search, value, fold} = item;
-    let label = value || '/';
+    let label = value;
     const isLeaf = index > -1;
     if (isLeaf) {
       request = requestList[index];
       label += search;
+      label = '/' + label;
     }
 
     const onDetail = (_) => {
@@ -1079,8 +1089,8 @@ var ReqData = React.createClass({
       colStyle.minWidth = width;
     }
 
-    const {isTreeView, tree} = modal || {};
-    const treeList = tree && tree.list || [];
+    const {isTreeView, tree = {}} = modal || {};
+    const treeList = Array.isArray(tree.filterList) && tree.filterList.length ? tree.filterList : tree.list;
 
     return (
         <div className="fill w-req-data-con orient-vertical-box">
@@ -1106,7 +1116,7 @@ var ReqData = React.createClass({
                   {(size) => (
                     <RV.List
                       ref="list"
-                      rowHeight={28}
+                      rowHeight={isTreeView ? 24 : 28}
                       width={size.width}
                       height={size.height}
                       rowCount={isTreeView ? treeList.length : list.length}

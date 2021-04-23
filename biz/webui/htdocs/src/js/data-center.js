@@ -37,6 +37,7 @@ dataList.splice = function(start, deleteCount, ...items) {
 };
 
 events.on('flushTree', () => {
+  events.trigger('filterTree');
   dataCallbacks.forEach(function (cb) {
     cb(networkModal);
   });

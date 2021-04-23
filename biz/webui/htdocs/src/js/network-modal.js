@@ -102,6 +102,8 @@ function parseKeywordList(keyword) {
 proto.search = function(keyword) {
   this._keyword = parseKeywordList(keyword);
   this.filter();
+  this.filterTree();
+
   if (!this.hasKeyword()) {
     var overflow = this._list.length - MAX_COUNT;
     overflow > 0 && this._list.splice(0, overflow);
@@ -704,6 +706,40 @@ proto.setTreeView = function(next = !this.isTreeView) {
   this.intercept();
   events.trigger('flushTree');
   events.trigger('toggleTreeView', this.isTreeView);
+};
+
+proto.filterTree = function() {
+  if (!this.isTreeView) {
+    return;
+  }
+
+  const {tree, _keyword: keyword, _list} = this;
+  if (tree.list.length <= 0) {
+    return;
+  }
+
+  if (!keyword) {
+    tree.filterList = [];
+  } else {
+    tree.filterList = tree.list.filter((id) => {
+      const index = tree.map.get(id);
+      let item = {url: id};
+
+      // leaf node
+      if (index > -1) {
+        item = _list[index];
+        return !item.hide;
+      }
+
+      // inner node
+      const hide = checkItem(item, keyword[0])
+      || (keyword[1] && checkItem(item, keyword[1]))
+      || (keyword[2] && checkItem(item, keyword[2]));
+      return !hide;
+    });
+  }
+
+  return tree.filterList;
 };
 
 module.exports = NetworkModal;
