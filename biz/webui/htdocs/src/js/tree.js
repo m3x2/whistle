@@ -50,16 +50,29 @@ const dfs = ({
 class Tree {
   // contains all tree node
   root = {};
-  // contains all unfolded node
-  list = [];
-  // contains all filtered node
-  filterList = [];
-  // map prefix to request list index
+  // map tree node id (prefix) to request list index
   map = new Map();
+  // contains all unfolded node
+  queue = [];
+
+  constructor(list) {
+    if (Array.isArray(list) && list.length > 0) {
+      list.forEach((item) => this.insert(item));
+    }
+  }
 
   // find target node
   // or closest parent
-  search({ url, id }) {
+  search(data) {
+    if (!data) {
+      return;
+    }
+
+    const { url, id } = data;
+    if (!url) {
+      return;
+    }
+
     const result = parse({ url, id });
     if (!result) {
       return;
@@ -100,7 +113,7 @@ class Tree {
       queue.shift();
       ++depth;
 
-      if (this.list.indexOf(node.id) > -1) {
+      if (this.queue.indexOf(node.id) > -1) {
         highlight = node.id;
       }
     }
@@ -114,7 +127,18 @@ class Tree {
     };
   }
 
-  insert({ url, id, index }) {
+  // 1. insert node
+  // 2. update queue
+  insert(data) {
+    if (!data) {
+      return;
+    }
+
+    const { url, id, index } = data;
+    if (!url) {
+      return;
+    }
+
     const result = this.search({ url, id });
     if (!result) {
       return;
@@ -185,8 +209,9 @@ class Tree {
     });
   }
 
-  // find the closest unfolded parent
-  // update list if needed
+  // 1. find the closest unfolded parent
+  // 2. insert after parent's last visible child
+  // 3. update queue
   flush({
     parent,
     child,
@@ -195,23 +220,23 @@ class Tree {
       return parent;
     }
 
-    let start = this.list.indexOf(parent);
+    let start = this.queue.indexOf(parent);
 
     if (child.parent.id === parent) {
       const p = this.map.get(parent);
       if (p && !p.fold) {
-        const end = this.list.length;
+        const end = this.queue.length;
 
         while (++start < end) {
-          if (!this.list[start].startsWith(parent)) {
+          if (!this.queue[start].startsWith(parent)) {
             break;
           }
         }
 
         if (start < end) {
-          this.list.splice(start, 0, child.id);
+          this.queue.splice(start, 0, child.id);
         } else {
-          this.list.push(child.id);
+          this.queue.push(child.id);
         }
 
         return child.id;
@@ -219,16 +244,22 @@ class Tree {
     }
 
     if (start === -1) {
-      this.list.push(parent);
+      this.queue.push(parent);
     }
 
     return parent;
   }
 
-  // DFS delete
-  // 1. down: node + children
-  // 2. up: node + parent(s)
-  delete({ url, id }) {
+  // DFS delete node
+  // 1.1 down: node + children
+  // 1.2 up: node + parent(s)
+  // 2. update queue
+  delete(data) {
+    if (!data) {
+      return;
+    }
+
+    const { url, id } = data;
     if (!url) {
       return;
     }
@@ -256,9 +287,9 @@ class Tree {
       this.map.delete(id);
 
       // remove list
-      index = this.list.indexOf(id);
+      index = this.queue.indexOf(id);
       if (index > -1) {
-        this.list.splice(index, 1);
+        this.queue.splice(index, 1);
       }
     };
 
@@ -280,9 +311,9 @@ class Tree {
 
   clear() {
     this.root = {};
-    this.list = [];
     this.map.clear();
-    return this.list;
+    this.queue = [];
+    return this.queue;
   }
 
   toggle(url, recursive = false) {
@@ -292,7 +323,7 @@ class Tree {
     }
 
     // url is invisible
-    let index = this.list.indexOf(url);
+    let index = this.queue.indexOf(url);
     if (index === -1) {
       return;
     }
@@ -323,7 +354,7 @@ class Tree {
       }
 
       // exist node in list
-      if (this.list.indexOf(id) > -1) {
+      if (this.queue.indexOf(id) > -1) {
         ++delta;
       }
 
@@ -362,7 +393,21 @@ class Tree {
     if (!next) {
       options = options.concat(queue);
     }
-    this.list.splice(...options);
+    this.queue.splice(...options);
+  }
+
+  // parse request url + id to tree id
+  static parse({ url, id }) {
+    const result = parse({ url, id });
+    if (!result) {
+      return '';
+    }
+
+    const {
+      queue,
+    } = result;
+
+    return queue.join('/');
   }
 }
 

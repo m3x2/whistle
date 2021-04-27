@@ -15,29 +15,27 @@ var serverInfoCallbacks = [];
 var framesUpdateCallbacks = [];
 var logCallbacks = [];
 var directCallbacks = [];
-var dataList = [];
 
-const _push = dataList.push;
-dataList.push = function(...items) {
-  _push.call(this, ...items);
-  if (items.length > 0) {
-    events.trigger('createRequest', items);
-  }
+const handler = {
+  set(target, key, value, receiver) {
+    if (/^\d+$/.test(key)) {
+      events.trigger('request', {key, value, handler: 'insert'});
+    }
+    return Reflect.set(target, key, value, receiver);
+  },
+
+  deleteProperty(target, key) {
+    if (/^\d+$/.test(key)) {
+      events.trigger('request', {key, value: target[key], handler: 'delete'});
+      --target.length;
+    }
+    return Reflect.deleteProperty(target, key);
+  },
 };
 
-const _splice = dataList.splice;
-dataList.splice = function(start, deleteCount, ...items) {
-  const prev = _splice.call(this, start, deleteCount, ...items);
-  if (prev.length > 0) {
-    events.trigger('deleteRequest', prev);
-  }
-  if (items.length > 0) {
-    events.trigger('createRequest', items, start);
-  }
-};
+let dataList = new Proxy([], handler);
 
-events.on('flushTree', () => {
-  events.trigger('filterTree');
+events.on('renderNetwork', () => {
   dataCallbacks.forEach(function (cb) {
     cb(networkModal);
   });

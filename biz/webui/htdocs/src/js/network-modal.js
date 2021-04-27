@@ -11,13 +11,51 @@ var WIN_NAME_PRE = '__whistle_' + location.href.replace(/\/[^/]*([#?].*)?$/, '/'
 var KW_RE = /^(url|u|content|c|b|body|headers|h|ip|i|status|result|s|r|method|m|mark|type|t):(.*)$/i;
 var KW_LIST_RE = /([^\s]+)(?:\s+([^\s]+)(?:\s+([\S\s]+))?)?/;
 
+const tree = new Tree();
+
+const startInterceptor = () => {
+  if (!tree) {
+    return;
+  }
+
+  const onRequest = (_, data) => {
+    if (!data) {
+      return;
+    }
+
+    const {handler, key, value} = data;
+    if (typeof tree[handler] !== 'function') {
+      return;
+    }
+
+    const {
+      url,
+      id,
+    } = value;
+    const hl = tree[handler]({
+      url,
+      id,
+      index: key,
+    });
+    events.trigger('renderNetwork');
+
+    if (handler === 'insert') {
+      events.trigger('highlightTree', hl);
+    }
+  };
+
+  events.on('request', onRequest);
+
+  return () => {
+    events.off('request', onRequest);
+  };
+};
+
 function NetworkModal(list) {
   this._list = updateOrder(list);
   this.list = list.slice(0, MAX_LENGTH);
-
+  this.tree = tree.queue;
   this.isTreeView = storage.get('isTreeView') === '1';
-  this.tree = new Tree();
-  this.stopInterceptor = null;
   this.intercept();
 }
 
@@ -102,8 +140,6 @@ function parseKeywordList(keyword) {
 proto.search = function(keyword) {
   this._keyword = parseKeywordList(keyword);
   this.filter();
-  this.filterTree();
-
   if (!this.hasKeyword()) {
     var overflow = this._list.length - MAX_COUNT;
     overflow > 0 && this._list.splice(0, overflow);
@@ -213,6 +249,7 @@ proto.filter = function(newList) {
     self.list = self._list.slice(0, MAX_LENGTH);
   }
   this.updateDisplayCount();
+  this.filterTree();
   return list;
 };
 
@@ -284,7 +321,7 @@ proto.getDisplayCount = function() {
 };
 
 proto.clear = function clear() {
-  this.tree.clear();
+  this.tree = tree.clear();
   this.clearNetwork = true;
   this._list.splice(0, this._list.length);
   this.list = [];
@@ -568,9 +605,17 @@ proto.getSelectedList = function() {
   });
 };
 
-function getPrevSelected(start, list) {
+function getPrevSelected(start, list, source) {
   for (; start >= 0; start--) {
     var item = list[start - 1];
+
+    if (Array.isArray(source)) {
+      const config = tree.map.get(item);
+      if (config) {
+        item = source[config.index];
+      }
+    }
+
     if (!item || (!item.selected && !item.active)) {
       return start;
     }
@@ -578,9 +623,17 @@ function getPrevSelected(start, list) {
   return start;
 }
 
-function getNextSelected(start, list) {
+function getNextSelected(start, list, source) {
   for (var len = list.length; start < len; start++) {
     var item = list[start + 1];
+
+    if (Array.isArray(source)) {
+      const config = tree.map.get(item);
+      if (config) {
+        item = source[config.index];
+      }
+    }
+
     if (!item || (!item.selected && !item.active)) {
       return start;
     }
@@ -590,17 +643,33 @@ function getNextSelected(start, list) {
 
 proto.setSelectedList = function(start, end, selectElem) {
   var list = this.list;
-  start = list.indexOf(start);
-  end = list.indexOf(end);
+  if (this.isTreeView) {
+    list = this.tree;
+    start = list.indexOf(Tree.parse({url: start.url, id: start.id}));
+    end = list.indexOf(Tree.parse({url: end.url, id: end.id}));
+  } else {
+    start = list.indexOf(start);
+    end = list.indexOf(end);
+  }
+
   if (start > end) {
-    var temp = getNextSelected(start, list);
+    var temp = getNextSelected(start, list, this._list);
     start = end;
     end = temp;
   } else {
-    start = getPrevSelected(start, list);
+    start = getPrevSelected(start, list, this._list);
   }
+
   for (var i = 0, len = list.length; i < len; i++) {
     var item = list[i];
+    if (this.isTreeView) {
+      const data = tree.map.get(item);
+      const {index} = data || {};
+      item = this._list[index];
+      if (!item) {
+        continue;
+      }
+    }
     if (i >= start && i <= end) {
       item.selected = true;
       selectElem(item, true);
@@ -634,78 +703,49 @@ function updateOrder(list, force) {
   return list;
 }
 
-proto.startInterceptor = function () {
-  const createRequest = (_, items, index = this._list.length - 1) => {
-    if (!this.isTreeView) {
-      return;
-    }
-
-    let list = items;
-    if (!Array.isArray(items)) {
-      list = [items];
-    }
-
-    list.forEach((item) => {
-      const {
-        url,
-        id,
-      } = item;
-      const hl = this.tree.insert({
-        url,
-        id,
-        index: index++,
-      });
-
-      events.trigger('highlightTree', hl);
-    });
-
-    events.trigger('flushTree');
-  };
-
-  // TODO: update tree map index after delete one request
-  const deleteRequest = (_, items) => {
-    if (!this.isTreeView) {
-      return;
-    }
-
-    let list = items;
-    if (!Array.isArray(items)) {
-      list = [items];
-    }
-
-    list.forEach((item) => this.tree.delete(item));
-
-    events.trigger('flushTree');
-  };
-
-  // TODO: updateRequest
-
-  events.on('createRequest', createRequest);
-  events.on('deleteRequest', deleteRequest);
-
-  return () => {
-    events.off('createRequest');
-    events.off('deleteRequest');
-  };
+proto.setTreeView = function(next = !this.isTreeView) {
+  this.isTreeView = !!next;
+  storage.set('isTreeView', +next);
+  events.trigger('toggleTreeView', this.isTreeView);
+  this.intercept();
 };
 
 proto.intercept = function() {
   if (this.isTreeView) {
-    this.stopInterceptor = this.startInterceptor();
+    this.stopInterceptor = startInterceptor();
   } else {
-    if (this.stopInterceptor) {
-      this.stopInterceptor();
-      this.stopInterceptor = null;
+    if (!this.stopInterceptor) {
+      return;
     }
+    this.stopInterceptor();
+    this.stopInterceptor = null;
   }
+
+  events.trigger('renderNetwork');
 };
 
-proto.setTreeView = function(next = !this.isTreeView) {
-  this.isTreeView = !!next;
-  storage.set('isTreeView', +next);
-  this.intercept();
-  events.trigger('flushTree');
-  events.trigger('toggleTreeView', this.isTreeView);
+proto.getTreeNode = function(id) {
+  if (!id) {
+    return null;
+  }
+
+  const item  = tree.map.get(id);
+  if (!item) {
+    return null;
+  }
+
+  const {index} = item;
+  const data = this._list[index];
+
+  return {
+    config: item,
+    request: data,
+  };
+};
+
+proto.toggleTreeNode = function(id, recursive = false) {
+  tree.toggle(id, recursive);
+  events.trigger('renderNetwork');
 };
 
 proto.filterTree = function() {
@@ -713,15 +753,12 @@ proto.filterTree = function() {
     return;
   }
 
-  const {tree, _keyword: keyword, _list} = this;
-  if (tree.list.length <= 0) {
-    return;
-  }
+  const {_keyword: keyword, _list} = this;
 
   if (!keyword) {
-    tree.filterList = [];
+    this.tree = tree.queue;
   } else {
-    tree.filterList = tree.list.filter((id) => {
+    this.tree = tree.queue.filter((id) => {
       const index = tree.map.get(id);
       let item = {url: id};
 
@@ -738,8 +775,6 @@ proto.filterTree = function() {
       return !hide;
     });
   }
-
-  return tree.filterList;
 };
 
 module.exports = NetworkModal;

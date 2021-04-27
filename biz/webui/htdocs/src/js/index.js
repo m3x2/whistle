@@ -2846,11 +2846,13 @@ var Index = React.createClass({
     }, 500);
   },
   toggleTreeView() {
-    const {isTreeView, network} = this.state;
+    const {network, isTreeView} = this.state;
     if (!network) {
       return;
     }
+
     const next = !isTreeView;
+
     this.setState({
       isTreeView: next,
     }, () => {

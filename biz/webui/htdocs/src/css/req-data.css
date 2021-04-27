@@ -118,8 +118,9 @@
   font-size: 14px;
 }
 
-.tree-node:hover {
+.tree-node:hover, .tree-node.w-selected {
   background-color: darkseagreen;
+  color: white;
 }
 
 .highlight {

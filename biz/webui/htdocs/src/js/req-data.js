@@ -362,24 +362,29 @@ var ReqData = React.createClass({
       updateTimer = updateTimer || setTimeout(updateUI, 50);
     });
 
-    events.on('toggleTreeView', (_, next) => {
-      if (next) {
-        this.stopHighlight = this.startHighlight();
-      } else {
-        if (this.stopHighlight) {
-          this.stopHighlight();
-          this.stopHighlight = null;
-        }
+    const enableHighlight = (next) => {
+      this.clearHighlight();
+      if (!next) {
+        return;
       }
+
+      const {modal = {}} = this.props;
+      if (modal.isTreeView) {
+        this.stopHighlight = this.startHighlight();
+      }
+    };
+
+    events.on('toggleTreeView', (_, next) => {
+      enableHighlight(next);
     });
+
+    $(document).on('visibilitychange', () => {
+      enableHighlight(!document.hidden);
+    });
+
     events.on('highlightTree', (_, id) => this.highlight(id));
 
-    events.on('filterTree', () => {
-      const {modal} = this.props;
-      if (modal) {
-        modal.filterTree();
-      }
-    });
+    this.stopHighlight = -1;
   },
   onDragStart: function(e) {
     var target = $(e.target).closest('.w-req-data-item');
@@ -798,12 +803,13 @@ var ReqData = React.createClass({
       list5[3].disabled = true;
     }
 
-    this.treeTarget = null;
-    const {tree} = modal || {};
-    if (tree) {
-      const treeNodeData = tree.map.get(treeId);
+    if (modal.isTreeView) {
+      this.treeTarget = null;
+
+      const treeNodeData = modal.getTreeNode(treeId);
       if (treeNodeData) {
-        const {index, fold} = treeNodeData;
+        const {config} = treeNodeData;
+        const {index, fold} = config;
         const isLeaf = index > -1;
 
         this.treeTarget = treeId;
@@ -941,19 +947,17 @@ var ReqData = React.createClass({
     this.container.focus();
   },
 
-  toggleTreeNode: function(recursive = false) {
+  toggleTreeNode(recursive = false) {
     if (!this.treeTarget) {
       return;
     }
 
-    const {modal = {}} = this.props;
-    const {tree} = modal;
-    if (!tree) {
+    const {modal} = this.props;
+    if (!modal) {
       return;
     }
 
-    tree.toggle(this.treeTarget, recursive);
-    events.trigger('flushTree');
+    modal.toggleTreeNode(this.treeTarget, recursive);
   },
 
   highlight(id) {
@@ -963,15 +967,20 @@ var ReqData = React.createClass({
       return;
     }
 
+    // first trigger
+    if (this.stopHighlight === -1) {
+      this.stopHighlight = this.startHighlight();
+    }
+
+    if (!this.stopHighlight) {
+      return;
+    }
+
     if (!this.highlightMap) {
       this.highlightMap = new Map();
     }
 
     this.highlightMap.set(id, -1);
-
-    if (!this.stopHighlight) {
-      this.stopHighlight = this.startHighlight();
-    }
   },
 
   startHighlight() {
@@ -980,7 +989,7 @@ var ReqData = React.createClass({
         return;
       }
 
-      this.highlightMap.forEach((expire, id, map) => {
+      this.highlightMap.forEach((expire, id) => {
         if (!id || !expire) {
           return;
         }
@@ -988,7 +997,7 @@ var ReqData = React.createClass({
         const el = this.$content.find(`[data-tree="${id}"]`);
         if (el) {
           if (expire === -1) {
-            this.highlightMap.set(id, Date.now() + 1200);
+            this.highlightMap.set(id, Date.now() + 1100);
             el.addClass('highlight');
             return;
           }
@@ -999,14 +1008,21 @@ var ReqData = React.createClass({
           }
         }
       });
-    }, 200);
+    }, 500);
 
     return () => {
+      clearInterval(timer);
       if (this.highlightMap) {
         this.highlightMap.clear();
       }
-      clearInterval(timer);
     };
+  },
+
+  clearHighlight() {
+    if (typeof this.stopHighlight === 'function') {
+      this.stopHighlight();
+      this.stopHighlight = null;
+    }
   },
 
   renderTreeNode(offset, style) {
@@ -1015,51 +1031,49 @@ var ReqData = React.createClass({
     }
 
     const {modal = {}} = this.props;
-    const {tree = {}, _list: requestList} = modal;
-    const {list, filterList, map} = tree;
-    const hasKeyword = modal.hasKeyword();
-    const treeList = hasKeyword ? filterList : list;
+    const {draggable} = this.state;
 
-    let id = treeList[offset];
-    if (!id) {
+    if (!modal || !modal.tree) {
       return null;
     }
 
-    const item = map.get(id);
-    if (!item) {
+    const id = modal.tree[offset];
+    const data = modal.getTreeNode(id);
+    if (!data) {
       return null;
     }
 
-    let request = null;
-    const {index, depth, search, value, fold} = item;
+    const {
+      config,
+      request,
+    } = data;
+
+    const {index, depth, search, value, fold} = config;
     let label = value;
     const isLeaf = index > -1;
     if (isLeaf) {
-      request = requestList[index];
       label += search;
       label = '/' + label;
     }
 
     const onDetail = (_) => {
       if (!request) {
-        tree.toggle(id);
-        events.trigger('flushTree');
-        return;
+        modal.toggleTreeNode(id);
       }
-      this.onClick(_, request);
     };
 
     return (
-      <div
+      <tr
         key={id}
         style={{
           ...style,
           marginLeft: depth * 32,
         }}
-        className={`w-req-data-item tree-node ${isLeaf ? 'tree-leaf': ''} ${request ? getStatusClass(request) : ''}`}
+        className={`w-req-data-item tree-node ${isLeaf ? 'tree-leaf': ''} ${request ? getClassName(request) : ''}`}
         data-id={request && request.id}
         data-tree={id}
         onClick={onDetail}
+        draggable={draggable}
       >
         {
           isLeaf ? null : (
@@ -1067,7 +1081,7 @@ var ReqData = React.createClass({
           )
         }
         {label}
-      </div>
+      </tr>
     );
   },
 
@@ -1089,8 +1103,7 @@ var ReqData = React.createClass({
       colStyle.minWidth = width;
     }
 
-    const {isTreeView, tree = {}} = modal || {};
-    const treeList = Array.isArray(tree.filterList) && tree.filterList.length ? tree.filterList : tree.list;
+    const {isTreeView} = modal || {};
 
     return (
         <div className="fill w-req-data-con orient-vertical-box">
@@ -1119,7 +1132,7 @@ var ReqData = React.createClass({
                       rowHeight={isTreeView ? 24 : 28}
                       width={size.width}
                       height={size.height}
-                      rowCount={isTreeView ? treeList.length : list.length}
+                      rowCount={isTreeView ? modal.tree.length : list.length}
                       rowRenderer={(options) => {
                         // var {index, isScrolling, key, style}=options;
 
