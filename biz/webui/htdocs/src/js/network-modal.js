@@ -28,18 +28,14 @@ const startInterceptor = () => {
       return;
     }
 
-    const {
-      url,
-      id,
-    } = value;
     const hl = tree[handler]({
-      url,
-      id,
       index: key,
+      ...value,
     });
-    events.trigger('renderNetwork');
 
-    if (handler === 'insert') {
+    events.trigger('updateUI');
+
+    if (hl) {
       events.trigger('highlightTree', hl);
     }
   };
@@ -383,7 +379,7 @@ proto.remove = function(item) {
   var list = this._list;
   var index = list.indexOf(item);
   if (index !== -1) {
-    list.splice(index ,1);
+    list.splice(index, 1);
     this.update(false, true);
   }
 };
@@ -721,7 +717,7 @@ proto.intercept = function() {
     this.stopInterceptor = null;
   }
 
-  events.trigger('renderNetwork');
+  events.trigger('updateUI');
 };
 
 proto.getTreeNode = function(id) {
@@ -745,7 +741,7 @@ proto.getTreeNode = function(id) {
 
 proto.toggleTreeNode = function(id, recursive = false) {
   tree.toggle(id, recursive);
-  events.trigger('renderNetwork');
+  events.trigger('updateUI');
 };
 
 proto.filterTree = function() {

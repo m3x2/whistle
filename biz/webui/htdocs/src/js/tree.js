@@ -1,7 +1,14 @@
 const LEAF_DELIMITER = '__LEAF__';
 
-const parse = ({ url, id }) => {
+const parse = ({ url, id, method }) => {
   try {
+    if (/connect/i.test(method)) {
+      return {
+        queue: url.split(':').slice(0, 1),
+        search: '',
+      };
+    }
+
     const { origin, pathname, search } = new URL(url);
     let result = [origin, ...pathname.slice(1).split('/')];
 
@@ -16,6 +23,7 @@ const parse = ({ url, id }) => {
       search: search.slice(0, 200),
     };
   } catch (error) {
+    console.error('parse url fail', url);
     return null;
   }
 };
@@ -39,7 +47,7 @@ const dfs = ({
       continue;
     }
 
-    if (item.childrenMap && item.childrenMap.size > 0) {
+    if (Array.isArray(item.children) && item.children.length > 0) {
       stack.unshift(...item.children);
     }
 
@@ -57,7 +65,7 @@ class Tree {
 
   constructor(list) {
     if (Array.isArray(list) && list.length > 0) {
-      list.forEach((item) => this.insert(item));
+      list.forEach((item, index) => this.insert({ ...item, index }));
     }
   }
 
@@ -68,12 +76,7 @@ class Tree {
       return;
     }
 
-    const { url, id } = data;
-    if (!url) {
-      return;
-    }
-
-    const result = parse({ url, id });
+    const result = parse(data);
     if (!result) {
       return;
     }
@@ -134,15 +137,16 @@ class Tree {
       return;
     }
 
-    const { url, id, index } = data;
-    if (!url) {
+    if (this.update(data)) {
       return;
     }
 
-    const result = this.search({ url, id });
+    const result = this.search(data);
     if (!result) {
       return;
     }
+
+    const { index } = data;
 
     let {
       node,
@@ -184,7 +188,7 @@ class Tree {
         temp.childrenMap = new Map();
       }
 
-      next = node.childrenMap.size;
+      next = node.children.length;
       node.children.push(temp);
       node.childrenMap.set(item, next);
 
@@ -207,6 +211,22 @@ class Tree {
       parent: highlight,
       child,
     });
+  }
+
+  update(data) {
+    const id = Tree.parse(data);
+    if (!id || !this.map.has(id)) {
+      return false;
+    }
+
+    const item = this.map.get(id);
+    const { index } = data;
+    this.map.set(id, {
+      ...item,
+      index,
+    });
+
+    return true;
   }
 
   // 1. find the closest unfolded parent
@@ -259,12 +279,7 @@ class Tree {
       return;
     }
 
-    const { url, id } = data;
-    if (!url) {
-      return;
-    }
-
-    const result = this.search({ url, id });
+    const result = this.search(data);
     if (!result) {
       return;
     }
@@ -397,8 +412,8 @@ class Tree {
   }
 
   // parse request url + id to tree id
-  static parse({ url, id }) {
-    const result = parse({ url, id });
+  static parse(data) {
+    const result = parse(data);
     if (!result) {
       return '';
     }

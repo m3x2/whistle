@@ -961,6 +961,10 @@ var ReqData = React.createClass({
   },
 
   highlight(id) {
+    if (!id) {
+      return;
+    }
+
     const {modal = {}} = this.props;
     const {isTreeView} = modal;
     if (!isTreeView) {
@@ -1053,7 +1057,9 @@ var ReqData = React.createClass({
     const isLeaf = index > -1;
     if (isLeaf) {
       label += search;
-      label = '/' + label;
+      if (depth > 0) {
+        label = '/' + label;
+      }
     }
 
     const onDetail = (_) => {
