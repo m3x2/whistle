@@ -11,7 +11,8 @@ var WIN_NAME_PRE = '__whistle_' + location.href.replace(/\/[^/]*([#?].*)?$/, '/'
 var KW_RE = /^(url|u|content|c|b|body|headers|h|ip|i|status|result|s|r|method|m|mark|type|t):(.*)$/i;
 var KW_LIST_RE = /([^\s]+)(?:\s+([^\s]+)(?:\s+([\S\s]+))?)?/;
 
-const tree = new Tree();
+let tree = new Tree();
+let debut = false;
 
 const startInterceptor = () => {
   if (!tree) {
@@ -498,8 +499,6 @@ proto.next = function() {
   }
 };
 
-
-
 function updateList(list, len, hasKeyword) {
   if (!(len > 0)) {
     return;
@@ -703,11 +702,22 @@ proto.setTreeView = function(next = !this.isTreeView) {
   this.isTreeView = !!next;
   storage.set('isTreeView', +next);
   events.trigger('toggleTreeView', this.isTreeView);
+  if (this.isTreeView) {
+    debut = false;
+  }
   this.intercept();
 };
 
 proto.intercept = function() {
   if (this.isTreeView) {
+    if (!debut) {
+      debut = true;
+      this._list.forEach((item, index) => tree.insert({
+        ...item,
+        index,
+      }));
+    }
+
     this.stopInterceptor = startInterceptor();
   } else {
     if (!this.stopInterceptor) {
@@ -739,8 +749,16 @@ proto.getTreeNode = function(id) {
   };
 };
 
-proto.toggleTreeNode = function(id, recursive = false) {
-  tree.toggle(id, recursive);
+proto.toggleTreeNode = function({
+  id,
+  next,
+  recursive,
+}) {
+  tree.toggle({
+    id,
+    next,
+    recursive,
+  });
   events.trigger('updateUI');
 };
 

@@ -38,6 +38,7 @@ const prune = (url) => {
 const dfs = ({
   node,
   callback,
+  filter,
 }) => {
   let stack = [node];
 
@@ -48,6 +49,9 @@ const dfs = ({
     }
 
     if (Array.isArray(item.children) && item.children.length > 0) {
+      if (typeof filter === 'function' && filter(item)) {
+        continue;
+      }
       stack.unshift(...item.children);
     }
 
@@ -331,7 +335,11 @@ class Tree {
     return this.queue;
   }
 
-  toggle(url, recursive = false) {
+  toggle({
+    id: url,
+    next,
+    recursive = false,
+  }) {
     // invalid url
     if (!url || !this.map.has(url)) {
       return;
@@ -351,7 +359,9 @@ class Tree {
 
     // next state
     const item = this.map.get(url);
-    const next = !item.fold;
+    if (typeof next !== 'boolean') {
+      next = !item.fold;
+    }
     this.map.set(url, {
       ...item,
       fold: next,
@@ -400,6 +410,17 @@ class Tree {
     dfs({
       node,
       callback,
+      filter: (current) => {
+        if (!next && !recursive) {
+          const {id} = current;
+          const item = this.map.get(id);
+          if (item && item.fold) {
+            callback(current);
+            return true;
+          }
+        }
+        return false;
+      },
     });
 
     // fold

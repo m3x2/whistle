@@ -103,12 +103,12 @@ var contextMenuList = [
     action: 'Fold',
   },
   {
-    name: 'Fold All',
-    action: 'Fold All',
-  },
-  {
     name: 'Unfold',
     action: 'Unfold',
+  },
+  {
+    name: 'Fold All',
+    action: 'Fold All',
   },
   {
     name: 'Unfold All',
@@ -278,7 +278,8 @@ var ReqData = React.createClass({
     return {
       draggable: true,
       columns: settings.getSelectedColumns(),
-      dragger: dragger
+      dragger: dragger,
+      stopHighlight: -1,
     };
   },
   componentDidMount: function() {
@@ -318,6 +319,11 @@ var ReqData = React.createClass({
     };
     self.container.on('keydown', function(e) {
       var modal = self.props.modal;
+
+      if (modal.isTreeView) {
+        return;
+      }
+
       toggleDraggable(e);
       if (!modal) {
         return;
@@ -431,10 +437,17 @@ var ReqData = React.createClass({
     events.trigger('networkStateChange');
   },
   setSelected: function(item, unselect) {
+    // list view
+    let selector = `tr[data-id="${item.id}"]`;
+    // tree view
+    if (!item.req) {
+      selector = `tr[data-tree="${item.id}"]`;
+    }
+
     if (item.selected) {
-      this.$content.find('tr[data-id=' + item.id + ']').addClass('w-selected');
+      this.$content.find(selector).addClass('w-selected');
     } else if (unselect) {
-      this.$content.find('tr[data-id=' + item.id + ']').removeClass('w-selected');
+      this.$content.find(selector).removeClass('w-selected');
     }
   },
   clearSelection: function() {
@@ -514,6 +527,8 @@ var ReqData = React.createClass({
   onClickContextMenu: function(action, e, parentAction, name) {
     var self = this;
     var item = self.currentFocusItem;
+    const {modal} = this.props;
+
     switch(parentAction || action) {
     case 'New Tab':
       item && window.open(item.url);
@@ -548,7 +563,6 @@ var ReqData = React.createClass({
       break;
     case 'Mark':
     case 'Unmark':
-      var modal = this.props.modal;
       var list = getFocusItemList(item) || (modal && modal.getSelectedList());
       if (list) {
         var isMark = action === 'Mark';
@@ -661,16 +675,32 @@ var ReqData = React.createClass({
         selectedList: self.props.modal.getSelectedList()
       });
       break;
-    /* eslint-disable no-duplicate-case */
     case 'Fold':
+      modal.toggleTreeNode({
+        id: this.treeTarget,
+        next: true,
+      });
+      break;
     case 'Unfold':
-      this.toggleTreeNode();
+      modal.toggleTreeNode({
+        id: this.treeTarget,
+        next: false,
+      });
       break;
     case 'Fold All':
-    case 'Unfold All':
-      this.toggleTreeNode(true);
+      modal.toggleTreeNode({
+        id: this.treeTarget,
+        next: true,
+        recursive: true,
+      });
       break;
-    /* eslint-enable no-duplicate-case */
+    case 'Unfold All':
+      modal.toggleTreeNode({
+        id: this.treeTarget,
+        next: false,
+        recursive: true,
+      });
+      break;
     }
   },
   onContextMenu: function(e) {
@@ -814,12 +844,10 @@ var ReqData = React.createClass({
 
         this.treeTarget = treeId;
 
-        // 6 7 fold
         contextMenuList[6].hide = fold || isLeaf;
-        contextMenuList[7].hide = fold || isLeaf;
-        // 8 9 unfold
-        contextMenuList[8].hide = !fold || isLeaf;
-        contextMenuList[9].hide = !fold || isLeaf;
+        contextMenuList[7].hide = !fold || isLeaf;
+        contextMenuList[8].hide = isLeaf;
+        contextMenuList[9].hide = isLeaf;
       }
     }
 
@@ -947,19 +975,6 @@ var ReqData = React.createClass({
     this.container.focus();
   },
 
-  toggleTreeNode(recursive = false) {
-    if (!this.treeTarget) {
-      return;
-    }
-
-    const {modal} = this.props;
-    if (!modal) {
-      return;
-    }
-
-    modal.toggleTreeNode(this.treeTarget, recursive);
-  },
-
   highlight(id) {
     if (!id) {
       return;
@@ -971,11 +986,9 @@ var ReqData = React.createClass({
       return;
     }
 
-    // first trigger
     if (this.stopHighlight === -1) {
       this.stopHighlight = this.startHighlight();
     }
-
     if (!this.stopHighlight) {
       return;
     }
@@ -983,7 +996,6 @@ var ReqData = React.createClass({
     if (!this.highlightMap) {
       this.highlightMap = new Map();
     }
-
     this.highlightMap.set(id, -1);
   },
 
@@ -1026,6 +1038,13 @@ var ReqData = React.createClass({
     if (typeof this.stopHighlight === 'function') {
       this.stopHighlight();
       this.stopHighlight = null;
+
+      $('.highlight').each((el) => {
+        if (!el) {
+          return;
+        }
+        $(el).removeClass('highlight');
+      });
     }
   },
 
@@ -1062,9 +1081,14 @@ var ReqData = React.createClass({
       }
     }
 
-    const onDetail = (_) => {
-      if (!request) {
-        modal.toggleTreeNode(id);
+    const onToggle = (_) => {
+      modal.toggleTreeNode({id});
+    };
+
+    const onArrow = (e) => {
+      e.preventDefault();
+      if ([37, 39].includes(e.which)) {
+        modal.toggleTreeNode({id});
       }
     };
 
@@ -1076,14 +1100,15 @@ var ReqData = React.createClass({
           marginLeft: depth * 32,
         }}
         className={`w-req-data-item tree-node ${isLeaf ? 'tree-leaf': ''} ${request ? getClassName(request) : ''}`}
-        data-id={request && request.id}
+        data-id={request ? request.id : id}
         data-tree={id}
-        onClick={onDetail}
         draggable={draggable}
+        tabIndex={index}
+        onKeyDown={onArrow}
       >
         {
           isLeaf ? null : (
-            <span className={`icon-fold glyphicon glyphicon-triangle-${fold ? 'right' : 'bottom'}`}></span>
+            <span onClick={onToggle} className={`icon-fold glyphicon glyphicon-triangle-${fold ? 'right' : 'bottom'}`}></span>
           )
         }
         {label}

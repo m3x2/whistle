@@ -116,6 +116,7 @@
   line-height: 24px;
   padding: 0 10px;
   font-size: 14px;
+  outline: none;
 }
 
 .tree-node:hover, .tree-node.w-selected {
@@ -138,6 +139,8 @@
 
 .icon-fold {
   font-size: 10px;
-  margin-right: 4px;
   opacity: 0.5;
+  padding: 10px 10px;
+  margin: -10px;
+  margin-right: -6px;
 }
